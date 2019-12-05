@@ -14,16 +14,16 @@ from transformer.Beam import Beam
 
 CONFIG_NAME = 'bert_config.json'
 
+
 class BertDecoder(nn.Module):
     ''' A decoder model with self attention mechanism. '''
 
     def __init__(self, decoder_config, embedding, device, dropout=0.1):
-
         super().__init__()
         self.len_max_seq = decoder_config['len_max_seq']
         d_word_vec = decoder_config['d_word_vec']
         n_layers = decoder_config['n_layers']
-        n_head = decoder_config['num_head']
+        n_head = decoder_config['n_head']
         d_k = decoder_config['d_k']
         d_v = decoder_config['d_v']
         d_model = decoder_config['d_model']
@@ -36,7 +36,7 @@ class BertDecoder(nn.Module):
         self.position_enc = nn.Embedding.from_pretrained(
             get_sinusoid_encoding_table(self.n_position, d_word_vec, padding_idx=0),
             freeze=True)
-        
+
         self.embedding = embedding
 
         self.layer_stack = nn.ModuleList([
@@ -45,7 +45,6 @@ class BertDecoder(nn.Module):
         self.last_linear = nn.Linear(d_model, vocab_size)
 
     def forward(self, tgt_seq, src_seq, enc_output):
-
         dec_slf_attn_list, dec_enc_attn_list = [], []
 
         # -- Prepare masks
@@ -56,18 +55,18 @@ class BertDecoder(nn.Module):
         slf_attn_mask = (slf_attn_mask_keypad + slf_attn_mask_subseq).gt(0)
 
         dec_enc_attn_mask = get_attn_key_pad_mask(seq_k=src_seq, seq_q=tgt_seq)
-            
+
         tgt_pos = torch.arange(1, tgt_seq.size(-1) + 1).unsqueeze(0).repeat(tgt_seq.size(0), 1).to(self.device)
         # -- Forward
         dec_output = self.embedding(tgt_seq) + self.position_enc(tgt_pos)
-        
+
         for dec_layer in self.layer_stack:
             dec_output, dec_slf_attn, dec_enc_attn = dec_layer(
                 dec_output, enc_output,
                 non_pad_mask=non_pad_mask,
                 slf_attn_mask=slf_attn_mask,
                 dec_enc_attn_mask=dec_enc_attn_mask)
-        
+
         return self.last_linear(dec_output)
 
 
@@ -80,9 +79,9 @@ class BertAbsSum(nn.Module):
         bert_config = BertConfig.from_json_file(bert_config_file)
         self.device = device
         self.bert_emb = BertEmbeddings(bert_config)
-        self.decoder = BertDecoder(decoder_config, self.bert_emb, device) 
+        self.decoder = BertDecoder(decoder_config, self.bert_emb, device)
         self.teacher_forcing = 0.5
-    
+
     def forward(self, src, src_mask, tgt, tgt_mask):
         # src/tgt: [batch_size, seq_len]
 
@@ -91,11 +90,12 @@ class BertAbsSum(nn.Module):
         tgt_mask = tgt_mask[:, :-1]
         # bert input: BertModel.forward(self, input_ids, token_type_ids=None, attention_mask=None, output_all_encoded_layers=True)
         # token_type_ids is not important since we only have one sentence so we can use default all zeros
-        bert_encoded = self.bert_encoder(src, attention_mask=src_mask, output_all_encoded_layers=False)[0]  # [batch_size, seq_len, hidden_size]
+        bert_encoded = self.bert_encoder(src, attention_mask=src_mask, output_all_encoded_layers=False)[
+            0]  # [batch_size, seq_len, hidden_size]
         # transformer input: BertDecoder.forward(self, tgt_seq_embedded, tgt_pos, src_seq, enc_output, return_attns=False)
         logits = self.decoder(tgt, src, bert_encoded)  # [batch_size, seq_len, vocab_size]
         return logits
-    
+
     def beam_decode(self, src_seq, src_mask, beam_size, n_best):
         ''' Translation work in one batch '''
 
@@ -179,22 +179,22 @@ class BertAbsSum(nn.Module):
             return all_hyp, all_scores
 
         with torch.no_grad():
-            #-- Encode
+            # -- Encode
             src_enc = self.bert_encoder(src_seq, attention_mask=src_mask, output_all_encoded_layers=False)[0]
 
-            #-- Repeat data for beam search
+            # -- Repeat data for beam search
             n_inst, len_s, d_h = src_enc.size()
             src_seq = src_seq.repeat(1, beam_size).view(n_inst * beam_size, len_s)
             src_enc = src_enc.repeat(1, beam_size, 1).view(n_inst * beam_size, len_s, d_h)
 
-            #-- Prepare beams
+            # -- Prepare beams
             inst_dec_beams = [Beam(beam_size, device=self.device) for _ in range(n_inst)]
 
-            #-- Bookkeeping for active or not
+            # -- Bookkeeping for active or not
             active_inst_idx_list = list(range(n_inst))
             inst_idx_to_position_map = get_inst_idx_to_tensor_position_map(active_inst_idx_list)
 
-            #-- Decode
+            # -- Decode
             for len_dec_seq in range(1, self.decoder.len_max_seq + 1):
 
                 active_inst_idx_list = beam_decode_step(
@@ -212,7 +212,7 @@ class BertAbsSum(nn.Module):
 
     def greedy_decode(self, src_seq, src_mask):
         enc_output = self.bert_encoder(src_seq, attention_mask=src_mask, output_all_encoded_layers=False)[0]
-        dec_seq = torch.full((src_seq.size(0), ), Constants.BOS).unsqueeze(-1).type_as(src_seq)
+        dec_seq = torch.full((src_seq.size(0),), Constants.BOS).unsqueeze(-1).type_as(src_seq)
 
         for i in range(self.decoder.len_max_seq):
             dec_output = self.decoder(dec_seq, src_seq, enc_output, 1)
@@ -230,4 +230,3 @@ class BertAbsSum(nn.Module):
 
 
 
-        
