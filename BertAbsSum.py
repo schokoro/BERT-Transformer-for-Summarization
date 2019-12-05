@@ -69,7 +69,7 @@ else:
         bert_config = json.load(f)
         decoder_config = {}
         decoder_config['len_max_seq'] = args.max_tgt_len
-        decoder_config['d_word_vec'] = bert_config['vocab_size']
+        decoder_config['vocab_size'] = bert_config['vocab_size']
         decoder_config['n_layers'] = 8
         decoder_config['num_head'] = 12
         decoder_config['d_k'] = 64
